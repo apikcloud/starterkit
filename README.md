@@ -4,7 +4,7 @@
 Modify the docker-compose file to indicate the correct repository and log in to the registry.
 
     docker login
-    
+
 
 ## Run the stack
 

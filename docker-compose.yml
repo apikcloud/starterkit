@@ -1,7 +1,8 @@
 
 services:
   odoo:
-    image: apik/odoo-<client>:main
+    image: loginline/odoo:17-20240915-enterprise
+    command: odoo --dev=reload
     depends_on:
       - postgres
     ports:
@@ -12,6 +13,7 @@ services:
     - PASSWORD=odoo
     volumes:
       - ./config:/etc/odoo:rw
+      - ./src:/mnt/extra-addons
   postgres:
     image: postgres:15.0
     environment:

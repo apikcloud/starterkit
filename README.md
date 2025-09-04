@@ -32,7 +32,7 @@ http://localhost:8069/web/database/manager
 
 Open a shell on the container
 
-    docker compose run odoo bash
+    docker compose exec odoo bash
 
 
 #### Odoo Shell

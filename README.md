@@ -1,61 +1,77 @@
-# Run Odoo locally
+# Starter Kit to run Odoo locally with Docker Compose
 
 ## Prerequisites
-Modify the docker-compose file to indicate the correct repository and log in to the registry.
 
-    docker login
+Docker and Docker Compose must be installed on your system.
 
+Modify the docker-compose file to indicate the correct mount point for your custom addons. In the example, it is set to `./extra-addons`. It means that your custom addons should be placed in the `extra-addons` folder. Only addons present at the root of the mount point will be loaded by the application. If you have already cloned the repository containing the addons, you cat simply set the mount point to that folder (`<custom_path>:/mnt/extra-addons:rw`).
+
+
+If needed, log in to the registry to pull the images:
+```bash
+docker login
+```
+
+Check and modify the `odoo.conf` file to set your desired configuration.
+
+Fix permissions on the local folders if necessary.
 
 ## Run the stack
 
-    docker compose up
+```bash
+docker compose up
+```
+
+This will start Odoo and PostgreSQL services.
 
 ## Restore a backup
 
-> Take care to neutralize the database after restoration. This includes
+> Take care to disable CRON threads by setting (`max_cron_threads = 0` in odoo.conf) and
+> neutralize the database during restoration. This includes
 > scheduled actions, outgoing e-mails and other external providers. A
 > standard option is available for this in version 16.0 and higher.
 
-### Standard, database manager
-http://localhost:8069/web/database/manager
 
-> There are a number of limitations to take into account, including
-> upload size and timeout, especially if a reverse proxy is used.
+The restoration of a database backup can be done in many ways, here is one of them : via the [Database Manager](http://localhost:8069/web/database/manager).
 
-
-### With CLI
-
-> Be sure to place the zip in the tree so that the file is accessible in
-> the Odoo container, for example the config folder or an extra volume.
-> Note that in this case, the mounting point must exist in the image and
-> be empty.
-
-Open a shell on the container
-
-    docker compose exec odoo bash
+See the documentation for more details, including CLI methods : [Operations > Database Management](https://apikcloud.github.io/docs/#/17-database).
 
 
-#### Odoo Shell
-
-Open the odoo shell :
-
-    odoo shell --no-http
-
-And run the following commands :
-
-    from odoo.service.db import restore_db
-    restore_db("<database_name>", "/<path_to_zip_file>", True, [neutralize_database=True])
 
 
-#### Click-odoo
 
->  This script allows you to restore databses created by using the Odoo
-> web  interface or the backupdb script. This avoids timeout and file
-> size  limitation problems when databases are too large.
+## Open a Shell
 
-Run the followings commands :
-
-	pip install click-odoo-contrib
-    click-odoo-restoredb -c /etc/odoo/odoo.conf [--neutralize] <database_name> <path_to_file>
+```bash
+docker compose exec odoo bash
+```
 
 
+## Open the Odoo Shell
+
+From inside the Odoo container, run:
+
+```bash
+odoo shell --no-http
+```
+
+`-d <database_name>` must be added if database name is not set in odoo.conf (`db_name = <database_name>`).
+
+## Stop the stack
+
+```bash
+docker compose down
+```
+
+`-v` can be added to remove volumes.
+
+
+## Additional Services
+
+2 additional services are defined in the `docker-compose.yml` file for convenience:
+- **atmoz/sftp** : A simple SFTP server reachable from the Odoo container.
+- **maildev** : A mail server that captures all outgoing emails for testing purposes. Accessible at [http://localhost:1080](http://localhost:1080).        
+
+## Additional Resources
+- [Odoo Docker Official Documentation](https://hub.docker.com/_/odoo)
+- [Odoo Documentation](https://www.odoo.com/documentation)

@@ -2,7 +2,7 @@
 services:
   odoo:
     image: apik/odoo:18.0-20250901-enterprise
-    command: odoo --dev=reload
+    command: odoo --dev=all
     depends_on:
       - postgres
     ports:
@@ -18,7 +18,7 @@ services:
       - ./extra-addons:/mnt/extra-addons:rw
       - odoo-data:/var/lib/odoo
   postgres:
-    image: postgres:17.0
+    image: postgres:16.0
     environment:
       - POSTGRES_DB=postgres
       - POSTGRES_PASSWORD=odoo
@@ -26,21 +26,21 @@ services:
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
       - postgres-data:/var/lib/postgresql/data/pgdata
-  maildev:
-    image: maildev/maildev
-    ports:
-      - "1080:1080"
-    depends_on:
-      - odoo
-    environment:
-      - TZ=Europe/Paris
-  sftp:
-      image: atmoz/sftp
-      volumes:
-          - ./sftp:/home/user/upload
-      ports:
-          - "2222:22"
-      command: user:password:1001
+  # maildev:
+  #   image: maildev/maildev
+  #   ports:
+  #     - "1080:1080"
+  #   depends_on:
+  #     - odoo
+  #   environment:
+  #     - TZ=Europe/Paris
+  # sftp:
+  #     image: atmoz/sftp
+  #     volumes:
+  #         - ./sftp:/home/user/upload
+  #     ports:
+  #         - "2222:22"
+  #     command: user:password:1001
 volumes:
   odoo-data:
   postgres-data:

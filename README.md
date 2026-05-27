@@ -1,77 +1,110 @@
-# Starter Kit to run Odoo locally with Docker Compose
+# Starter Kit — Odoo with Traefik (staging / production)
+
+Docker Compose stack with integrated Traefik reverse proxy, automatic TLS via Let's Encrypt, and longpolling support. Addons are bundled in the image — no local mount needed.
 
 ## Prerequisites
 
-Docker and Docker Compose must be installed on your system.
+- Docker and Docker Compose installed on the server
+- A domain name pointing to the server's IP (A or CNAME record)
+- Ports 80 and 443 open on the firewall
 
-Modify the docker-compose file to indicate the correct mount point for your custom addons. In the example, it is set to `./extra-addons`. It means that your custom addons should be placed in the `extra-addons` folder. Only addons present at the root of the mount point will be loaded by the application. If you have already cloned the repository containing the addons, you cat simply set the mount point to that folder (`<custom_path>:/mnt/extra-addons:rw`).
+## Structure
 
-
-If needed, log in to the registry to pull the images:
-```bash
-docker login
+```
+.
+├── docker-compose.yml
+├── .env                  # Environment variables (do not commit)
+└── config/
+    └── odoo.conf         # Odoo configuration (mounted read-only)
 ```
 
-Check and modify the `odoo.conf` file to set your desired configuration.
+## Configuration
 
-Fix permissions on the local folders if necessary.
+### 1. `.env` file
 
-## Run the stack
+Copy `.env.example` to `.env` and fill in the values:
 
 ```bash
-docker compose up
+cp .env.example .env
 ```
 
-This will start Odoo and PostgreSQL services.
+| Variable                 | Description                                            |
+| ------------------------ | ------------------------------------------------------ |
+| `DOMAIN`                 | Main domain for the instance (e.g. `odoo.example.com`) |
+| `ACME_EMAIL`             | Email for Let's Encrypt notifications                  |
+| `ODOO_DB_USER`           | PostgreSQL user                                        |
+| `ODOO_DB_PASSWORD`       | PostgreSQL password                                    |
+| `TRAEFIK_DASHBOARD_AUTH` | BasicAuth hash for the Traefik dashboard               |
 
-## Restore a backup
+> **Important**: `$` characters in the htpasswd hash must be escaped as `$$` in the `.env` file.
+> Docker Compose interprets `$xxx` as an interpolation variable.
 
-> Take care to disable CRON threads by setting (`max_cron_threads = 0` in odoo.conf) and
-> neutralize the database during restoration. This includes
-> scheduled actions, outgoing e-mails and other external providers. A
-> standard option is available for this in version 16.0 and higher.
+To generate the hash:
+```bash
+htpasswd -nb admin yourpassword
+# Then replace every $ with $$ in the .env file
+```
 
+### 2. `config/odoo.conf`
 
-The restoration of a database backup can be done in many ways, here is one of them : via the [Database Manager](http://localhost:8069/web/database/manager).
+Key settings for this environment:
 
-See the documentation for more details, including CLI methods : [Operations > Database Management](https://apikcloud.github.io/docs/#/17-database).
+- `proxy_mode = True` — required behind Traefik
+- `workers = 4` — adjust based on available CPUs (rule of thumb: 2 × CPU + 1)
+- `max_cron_threads = 0` — disabled by default, enable after validating the restored database (see Restore section)
+- `longpolling_port = 8072` — dedicated port for the real-time bus (notifications, chatter)
 
+## Start
 
+```bash
+docker compose up -d
+```
 
+Traefik provisions the TLS certificate on first start. The instance is then available at `https://${DOMAIN}`.
 
+The Traefik dashboard is available at `https://traefik.${DOMAIN}` (BasicAuth protected).
 
-## Open a Shell
+## Connect to the instance
+
+### Odoo container shell
 
 ```bash
 docker compose exec odoo bash
 ```
 
-
-## Open the Odoo Shell
-
-From inside the Odoo container, run:
+### Odoo shell (Python REPL)
 
 ```bash
-odoo shell --no-http
+docker compose exec odoo odoo shell --no-http -d <database_name>
 ```
 
-`-d <database_name>` must be added if database name is not set in odoo.conf (`db_name = <database_name>`).
+## Restore a backup
 
-## Stop the stack
+> Before restoring, make sure `max_cron_threads = 0` in `odoo.conf` to prevent scheduled actions
+> from running on the database being loaded.
+> Also neutralize outgoing emails and external connectors
+> (built-in option available since Odoo 16).
+
+Restoration can be done via the [Database Manager](http://localhost:8069/web/database/manager) or via CLI.
+
+See the full documentation: [Operations > Database Management](https://apikcloud.github.io/docs/#/17-database).
+
+## Stop
 
 ```bash
 docker compose down
 ```
 
-`-v` can be added to remove volumes.
+Add `-v` to also remove volumes (data will be lost).
 
+## Architecture notes
 
-## Additional Services
+- Odoo does not expose any port directly on the host — all traffic goes through Traefik.
+- Longpolling (`/websocket`, `/longpolling`) is routed to port `8072` via a dedicated Traefik router — required for the real-time bus to work.
+- PostgreSQL is not reachable from outside; Odoo waits for the Postgres healthcheck to pass before starting.
 
-2 additional services are defined in the `docker-compose.yml` file for convenience:
-- **atmoz/sftp** : A simple SFTP server reachable from the Odoo container.
-- **maildev** : A mail server that captures all outgoing emails for testing purposes. Accessible at [http://localhost:1080](http://localhost:1080).        
+## Resources
 
-## Additional Resources
-- [Odoo Docker Official Documentation](https://hub.docker.com/_/odoo)
 - [Odoo Documentation](https://www.odoo.com/documentation)
+- [Traefik Documentation](https://doc.traefik.io/traefik/)
+- [Apik Docs](https://apikcloud.github.io/docs/)

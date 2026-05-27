@@ -1,46 +1,93 @@
-
 services:
-  odoo:
-    image: apik/odoo:18.0-20250901-enterprise
-    command: odoo --dev=all
-    depends_on:
-      - postgres
+  traefik:
+    image: traefik:v3.7
+    restart: unless-stopped
+    command:
+      - "--log.level=INFO"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
     ports:
-      - "8069:8069"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-data:/letsencrypt
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.traefik-dashboard.entrypoints=websecure"
+      - "traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+      - "traefik.http.routers.traefik-dashboard.middlewares=dashboard-auth"
+      - "traefik.http.middlewares.dashboard-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
+
+  odoo:
+    image: apik/odoo:18.0-20260301-enterprise
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       - HOST=postgres
-      - USER=odoo
-      - PASSWORD=odoo
-      - SMTP_HOST=maildev
-      - SMTP_PORT=1025
+      - USER=${ODOO_DB_USER}
+      - PASSWORD=${ODOO_DB_PASSWORD}
     volumes:
-      - ./config:/etc/odoo:rw
-      - ./extra-addons:/mnt/extra-addons:rw
+      - ./config/odoo.conf:/etc/odoo/odoo.conf:ro
       - odoo-data:/var/lib/odoo
+    labels:
+      - "traefik.enable=true"
+      # Main Odoo router
+      - "traefik.http.routers.odoo.rule=Host(`odoo.${DOMAIN}`)"
+      - "traefik.http.routers.odoo.entrypoints=websecure"
+      - "traefik.http.routers.odoo.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.odoo.service=odoo"
+      - "traefik.http.routers.odoo.priority=1"
+      - "traefik.http.services.odoo.loadbalancer.server.port=8069"
+      - "traefik.http.routers.odoo.middlewares=odoo-headers,odoo-buffering"
+      - "traefik.http.middlewares.odoo-headers.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.middlewares.odoo-headers.headers.customrequestheaders.X-Forwarded-For="
+      - "traefik.http.middlewares.odoo-buffering.buffering.maxResponseBodyBytes=100000000"
+      # Longpolling router — PathPrefix accepts only one argument, use PathRegexp instead
+      - "traefik.http.routers.odoo-longpoll.rule=Host(`odoo.${DOMAIN}`) && PathRegexp(`^/(websocket|longpolling)`)"
+      - "traefik.http.routers.odoo-longpoll.entrypoints=websecure"
+      - "traefik.http.routers.odoo-longpoll.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.odoo-longpoll.service=odoo-longpoll"
+      - "traefik.http.routers.odoo-longpoll.priority=100"
+      - "traefik.http.services.odoo-longpoll.loadbalancer.server.port=8072"
+    networks:
+      - default
+
   postgres:
-    image: postgres:16.0
+    image: postgres:16
+    restart: unless-stopped
     environment:
       - POSTGRES_DB=postgres
-      - POSTGRES_PASSWORD=odoo
-      - POSTGRES_USER=odoo
+      - POSTGRES_USER=${ODOO_DB_USER}
+      - POSTGRES_PASSWORD=${ODOO_DB_PASSWORD}
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
       - postgres-data:/var/lib/postgresql/data/pgdata
-  # maildev:
-  #   image: maildev/maildev
-  #   ports:
-  #     - "1080:1080"
-  #   depends_on:
-  #     - odoo
-  #   environment:
-  #     - TZ=Europe/Paris
-  # sftp:
-  #     image: atmoz/sftp
-  #     volumes:
-  #         - ./sftp:/home/user/upload
-  #     ports:
-  #         - "2222:22"
-  #     command: user:password:1001
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${ODOO_DB_USER} -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - default
+
 volumes:
   odoo-data:
   postgres-data:
+  traefik-data:
+
+networks:
+  default:
+    driver: bridge
